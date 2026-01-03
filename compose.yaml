@@ -1,13 +1,29 @@
 services:
   postgres:
-    image: 'postgres:latest'
+    image: postgres:15-alpine
+    container_name: enterprise-iam-service-postgres-1
     environment:
-      - 'POSTGRES_DB=mydatabase'
-      - 'POSTGRES_PASSWORD=secret'
-      - 'POSTGRES_USER=myuser'
+      POSTGRES_DB: iam_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin_password
     ports:
-      - '5432'
+      - "5432:5432" # <--- OBRIGATÓRIO SER ASSIM
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - iam-network
+
   redis:
-    image: 'redis:latest'
+    image: redis:7-alpine
+    container_name: enterprise-iam-service-redis-1
     ports:
-      - '6379'
+      - "6379:6379" # <--- O MESMO PRO REDIS
+    networks:
+      - iam-network
+
+volumes:
+  postgres_data:
+
+networks:
+  iam-network:
+    driver: bridge

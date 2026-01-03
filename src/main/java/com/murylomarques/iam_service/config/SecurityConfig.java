@@ -32,9 +32,20 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authorize -> authorize
-                // Rotas Públicas (Login, Registro, Swagger se tiver)
+                // Rotas Públicas de Auth
                 .requestMatchers("/auth/**").permitAll()
-                // Qualquer outra rota precisa de autenticação
+                
+                // LIBERANDO SWAGGER (Adicione estas linhas)
+                .requestMatchers(
+                "/v3/api-docs/**",
+                "/configuration/ui",
+                "/swagger-resources/**",
+                "/configuration/security",
+                "/swagger-ui/**",
+                "/webjars/**"
+                ).permitAll()
+                
+                // Resto bloqueado
                 .anyRequest().authenticated()
             )
             .sessionManagement(session -> session
