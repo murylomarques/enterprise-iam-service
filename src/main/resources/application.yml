@@ -1,40 +1,39 @@
 spring:
   application:
-    name: iam-service
+    name: iam-service-test
   
+  # Sobrescreve o Postgres pelo H2
   datasource:
-    url: jdbc:postgresql://localhost:5432/iam_db
-    username: admin
-    password: admin_password
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
   
   jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: create-drop # Cria as tabelas na hora e apaga depois
+    show-sql: false # Limpa o log
     properties:
       hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
 
-  data:
+  # Desativa o Redis nos testes (pois não configuramos TestContainer para ele ainda)
+  data: 
     redis:
-      host: localhost
-      port: 6379
+      repositories:
+        enabled: false
 
-server:
-  port: 8080
-
-# CONFIGURAÇÃO CUSTOMIZADA (separada do 'spring' acima)
+# Configuração de Segurança para Testes (Chave aleatória)
 application:
   security:
     jwt:
-      secret-key: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
-      expiration: 86400000
+        secret-key: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+        expiration: 86400000
 
+# Desativa o Swagger nos testes para acelerar
 springdoc:
   api-docs:
-    path: /v3/api-docs
+    enabled: false
   swagger-ui:
-    path: /swagger-ui.html
-    operations-sorter: method # Ordena por GET, POST, etc
+    enabled: false
