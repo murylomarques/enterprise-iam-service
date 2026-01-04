@@ -1,4 +1,4 @@
-# 🔐 Enterprise IAM Service (Identity & Access Management)
+# 🛡️ Enterprise IAM Service (Identity & Access Management)
 
 ![Java](https://img.shields.io/badge/Java-17%2B-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.4-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)
@@ -7,16 +7,16 @@
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
-> Um microsserviço de autenticação e autorização robusto, projetado para ambientes corporativos SaaS, implementando padrões modernos de segurança, RBAC e escalabilidade.
+> Um microsserviço de autenticação e autorização robusto, projetado para ambientes corporativos SaaS, implementando padrões modernos de segurança, RBAC, Multi-tenancy real e Rotação de Tokens.
 
 ---
 
-## 🏗️ Arquitetura da Solução
+## 🏗️ Arquitetura e Fluxos de Segurança
 
-O projeto segue uma **Arquitetura em Camadas (Layered Architecture)** estrita para garantir a separação de responsabilidades e testabilidade.
+O projeto segue uma **Arquitetura em Camadas** estrita. Abaixo, detalho os dois fluxos principais de autenticação.
 
-### Fluxo de Autenticação (JWT)
-O diagrama abaixo ilustra como o sistema processa uma requisição segura.
+### 1. Fluxo de Autenticação (Login & Access)
+O acesso aos recursos protegidos é feito via **JWT Stateless**.
 
 ```mermaid
 sequenceDiagram
@@ -24,18 +24,40 @@ sequenceDiagram
     participant Filter as JWT Filter
     participant Controller
     participant Service
-    participant DB as PostgreSQL
     
-    User->>Filter: Request (Header: Bearer Token)
-    alt Token Inválido/Ausente
+    User->>Filter: Request (Header: Bearer Access_Token)
+    alt Token Inválido/Expirado
         Filter-->>User: 403 Forbidden
     else Token Válido
-        Filter->>Controller: Forward Request (User Details)
-        Controller->>Service: Chama Regra de Negócio
-        Service->>DB: Query/Transaction
-        DB-->>Service: Dados
-        Service-->>Controller: DTO Response
-        Controller-->>User: 200 OK + JSON
+        Filter->>Controller: Forward Request (User Context)
+        Controller->>Service: Regra de Negócio (Auditoria Automática)
+        Service-->>Controller: Response DTO
+        Controller-->>User: 200 OK
+    end
+```
+
+### 2. Fluxo de Token Rotation (Refresh Token)
+Para aumentar a segurança, o Access Token tem vida curta. O Refresh Token (salvo no banco) permite renovação sem login, com **rotação automática** (uso único) para prevenir roubo de sessão.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AuthController
+    participant RefreshService
+    participant DB as PostgreSQL
+
+    User->>AuthController: POST /refresh-token
+    AuthController->>RefreshService: validaToken(refresh_token)
+    RefreshService->>DB: Busca e Verifica Expiração
+    
+    alt Token Válido
+        RefreshService->>DB: Deleta Antigo (Rotação)
+        RefreshService->>DB: Salva Novo Token
+        RefreshService-->>AuthController: Retorna Novo Par de Tokens
+        AuthController-->>User: 200 OK (Access + Refresh)
+    else Token Inválido/Reutilizado
+        RefreshService-->>AuthController: Exception
+        AuthController-->>User: 403 Forbidden (Requer novo Login)
     end
 ```
 
@@ -43,56 +65,57 @@ sequenceDiagram
 
 ## 💾 Modelagem de Dados (ER Diagram)
 
-O sistema foi preparado para **Multi-tenancy** (várias empresas usando a mesma base), onde cada registro crítico possui um `company_id`.
+O sistema implementa **Multi-tenancy Relacional**. Usuários e Permissões (Roles) pertencem estritamente a uma Empresa (`COMPANIES`).
 
 ```mermaid
 erDiagram
-    USERS ||--o{ USER_ROLES : has
-    ROLES ||--o{ USER_ROLES : assigned_to
+    COMPANIES ||--o{ USERS : "emprega"
+    COMPANIES ||--o{ ROLES : "define"
+    USERS ||--o{ REFRESH_TOKENS : "possui ativo"
+    USERS ||--o{ USER_ROLES : "tem permissao"
+    ROLES ||--o{ USER_ROLES : "atribuido a"
+    
+    COMPANIES {
+        UUID id PK
+        String name
+        String cnpj
+        Boolean active
+    }
     
     USERS {
         UUID id PK
         String email UK
         String password
-        String company_id "Tenant Isolation"
+        UUID company_id FK
     }
     
     ROLES {
         UUID id PK
         String name "Ex: ROLE_ADMIN"
-        String company_id
+        UUID company_id FK
     }
 
-    USER_ROLES {
+    REFRESH_TOKENS {
+        UUID id PK
+        String token
+        Instant expiry_date
         UUID user_id FK
-        UUID role_id FK
     }
 ```
 
 ---
 
-## 🚀 Decisões Técnicas e Padrões de Projeto
+## 🚀 Funcionalidades Enterprise
 
-Para garantir um código nível Enterprise, foram aplicados os seguintes conceitos:
+Diferenciais técnicos implementados além do básico:
 
-| Conceito / Padrão | Onde foi aplicado? | Por que usar? |
+| Funcionalidade | Implementação Técnica | Benefício |
 | :--- | :--- | :--- |
-| **DTO Pattern** | `AuthenticationRequest`, `RegisterRequest` | Evita expor as Entidades JPA diretamente na API, prevenindo vazamento de dados sensíveis (senha). |
-| **Repository Pattern** | `UserRepository` | Abstrai a camada de acesso a dados, facilitando a troca de banco ou testes (Mock). |
-| **Builder Pattern** | Lombok `@Builder` | Criação de objetos complexos (User, Role) de forma fluente e imutável. |
-| **Strategy/Adapter** | `UserDetailsServiceImpl` | Adapta nossa entidade `User` para o contrato `UserDetails` que o Spring Security exige. |
-| **Global Exception Handling** | `@RestControllerAdvice` | Centraliza o tratamento de erros, garantindo que o cliente sempre receba um JSON limpo, nunca um StackTrace. |
-
----
-
-## 🛡️ Funcionalidades de Segurança
-
-1.  **Stateless Authentication:** Uso de **JWT (JSON Web Tokens)** assinados com HMAC-SHA256. Nenhuma sessão é salva no servidor (escalabilidade horizontal).
-2.  **Password Hashing:** Senhas criptografadas com **BCrypt** (custo 10) antes de ir para o banco.
-3.  **RBAC (Role-Based Access Control):**
-    *   `ROLE_USER`: Acesso básico.
-    *   `ROLE_ADMIN`: Acesso privilegiado (endpoints bloqueados via `@PreAuthorize`).
-4.  **Input Validation:** Validação rigorosa com **Bean Validation** (Jakarta) para impedir SQL Injection e dados sujos.
+| **Secure Token Rotation** | `RefreshTokenService` | Se um token for roubado, ele vale por pouco tempo. O refresh token é invalidado após o uso. |
+| **Multi-tenancy Real** | Entidade `Company` + Relationships | Isolamento lógico de dados. Um usuário da "Google" não acessa dados da "Microsoft". |
+| **Auditoria Automática** | `@EntityListeners(AuditingEntityListener.class)` | Rastreio automático de `created_at` e `updated_at` sem sujar o código de negócio. |
+| **Tratamento de Erros** | `@RestControllerAdvice` | Padronização de respostas de erro (401, 403, 404) em formato JSON amigável. |
+| **RBAC Dinâmico** | `@PreAuthorize("hasRole('ADMIN')")` | Proteção granular de endpoints baseada em cargos. |
 
 ---
 
@@ -125,13 +148,27 @@ Para garantir um código nível Enterprise, foram aplicados os seguintes conceit
 
 ---
 
-## 🧪 Testes
+## 🧪 Testando a API (Exemplos)
 
-O projeto conta com testes unitários cobrindo os serviços críticos usando **JUnit 5** e **Mockito**.
+### 1. Criar Empresa e Usuário (Registro)
+O sistema detecta se a empresa existe. Se não, cria uma nova (Tenant onboarding).
+**POST** `/auth/register`
+```json
+{
+  "firstName": "Murylo",
+  "lastName": "CEO",
+  "email": "ceo@tech.com",
+  "password": "123",
+  "companyId": "Minha Startup SaaS"
+}
+```
 
-Para rodar os testes:
-```bash
-./mvnw test
+### 2. Renovação de Acesso (Refresh Token)
+**POST** `/auth/refresh-token`
+```json
+{
+  "refreshToken": "COLE_SEU_UUID_AQUI"
+}
 ```
 
 ---
