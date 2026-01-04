@@ -9,33 +9,24 @@ import io.swagger.v3.oas.annotations.info.License;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.servers.Server;
+import org.springframework.context.annotation.Configuration;
 
+@Configuration
 @OpenAPIDefinition(
         info = @Info(
                 contact = @Contact(
                         name = "Murylo Marques",
-                        email = "seu-email@exemplo.com",
-                        url = "https://linkedin.com/in/seu-linkedin"
+                        email = "seu-email@exemplo.com"
                 ),
                 description = "Documentação da API de Autenticação Enterprise (IAM)",
-                title = "Enterprise IAM Service - Murylo",
-                version = "1.0",
-                license = @License(
-                        name = "MIT License",
-                        url = "https://opensource.org/licenses/mit-license.php"
-                ),
-                termsOfService = "Terms of service"
+                title = "Enterprise IAM Service",
+                version = "1.0"
         ),
         servers = {
-                @Server(
-                        description = "Local ENV",
-                        url = "http://localhost:8080"
-                )
+                @Server(description = "Local", url = "http://localhost:8080")
         },
         security = {
-                @SecurityRequirement(
-                        name = "bearerAuth"
-                )
+                @SecurityRequirement(name = "bearerAuth")
         }
 )
 @SecurityScheme(

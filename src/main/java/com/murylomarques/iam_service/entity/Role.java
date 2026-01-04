@@ -4,14 +4,16 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "roles")
-@Data // Lombok gera Getters, Setters, toString, etc.
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 public class Role extends BaseEntity {
 
     @Column(nullable = false, length = 50)
@@ -19,10 +21,11 @@ public class Role extends BaseEntity {
 
     @Column(length = 150)
     private String description;
-    
-    // Multi-tenancy: O cargo pertence a qual empresa? 
-    // (Pode ser null se for um cargo global do sistema, mas vamos focar no tenant)
-    // Usaremos String para o ID da empresa para facilitar, poderia ser UUID.
-    @Column(name = "company_id", nullable = false) 
-    private String companyId; 
+
+    // Roles podem ser:
+    // - Globais (company = null)
+    // - Específicas de uma empresa (multi-tenant)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id") // nullable por padrão
+    private Company company;
 }

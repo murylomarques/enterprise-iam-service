@@ -12,12 +12,13 @@ public class DemoController {
 
     @GetMapping
     public ResponseEntity<String> sayHello() {
-        return ResponseEntity.ok("Olá Usuário Comum! Você está logado.");
+        return ResponseEntity.ok("Olá Usuário! Você tem um token válido.");
     }
 
+    // --- NOVO ENDPOINT ---
     @GetMapping("/admin")
-    @PreAuthorize("hasRole('ADMIN')") // <--- A MÁGICA ACONTECE AQUI
+    @PreAuthorize("hasRole('ADMIN')") // Só entra se tiver ROLE_ADMIN no token
     public ResponseEntity<String> sayHelloAdmin() {
-        return ResponseEntity.ok("Olá ADMIN! Se você vê isso, você manda no sistema! 👮‍♂️");
+        return ResponseEntity.ok("👑 Olá ADMIN! Você tem acesso privilegiado.");
     }
 }

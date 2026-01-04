@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.util.Set;
@@ -14,6 +15,7 @@ import java.util.Set;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true) // Boa prática ao estender BaseEntity
 public class User extends BaseEntity {
 
     @Column(nullable = false, unique = true)
@@ -28,12 +30,13 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String lastName;
 
-    // MULTI-TENANT: O usuário pertence a UMA empresa
-    @Column(name = "company_id", nullable = false)
-    private String companyId;
+    // MULTI-TENANT: usuário pertence a UMA empresa
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id", nullable = false)
+    private Company company;
 
-    // Um usuário pode ter vários cargos (Ex: Gestor e Editor)
-    @ManyToMany(fetch = FetchType.EAGER) // EAGER carrega as roles junto com o usuário (cuidado com performance, mas para auth é necessário)
+    // Um usuário pode ter vários cargos (ex: ADMIN, EDITOR)
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "user_roles",
             joinColumns = @JoinColumn(name = "user_id"),

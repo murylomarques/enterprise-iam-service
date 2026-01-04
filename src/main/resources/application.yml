@@ -1,39 +1,43 @@
 spring:
   application:
     name: iam-service-test
-  
-  # Sobrescreve o Postgres pelo H2
+
+  # Configuração para usar o Postgres do Docker (que seu log mostrou estar ativo)
   datasource:
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
+    url: jdbc:postgresql://localhost:5432/iam_db
     username: sa
-    password: 
-  
+    password: sa
+    driver-class-name: org.postgresql.Driver
+
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    # REMOVIDO o H2Dialect que causava o erro createClob()
     hibernate:
-      ddl-auto: create-drop # Cria as tabelas na hora e apaga depois
-    show-sql: false # Limpa o log
+      ddl-auto: update 
+    show-sql: true
     properties:
       hibernate:
-        format_sql: false
+        format_sql: true
+        # Deixa o Hibernate detectar o dialeto do Postgres sozinho
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # Desativa o Redis nos testes (pois não configuramos TestContainer para ele ainda)
-  data: 
-    redis:
-      repositories:
-        enabled: false
+  # Ativa o suporte ao Docker Compose (Postgres e Redis)
+  docker:
+    compose:
+      lifecycle-management: start_and_stop
 
-# Configuração de Segurança para Testes (Chave aleatória)
+  # Reativando o Swagger (Estava 'false' no seu código)
+  springdoc:
+    api-docs:
+      enabled: true
+    swagger-ui:
+      enabled: true
+      path: /swagger-ui.html
+
+# Configuração de Segurança
 application:
   security:
     jwt:
-        secret-key: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
-        expiration: 86400000
-
-# Desativa o Swagger nos testes para acelerar
-springdoc:
-  api-docs:
-    enabled: false
-  swagger-ui:
-    enabled: false
+      secret-key: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      expiration: 86400000      # 1 dia (Access Token)
+      refresh-token:
+        expiration: 604800000   # 7 dias (Refresh Token)

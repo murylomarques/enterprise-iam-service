@@ -2,9 +2,14 @@ package com.murylomarques.iam_service.service;
 
 import com.murylomarques.iam_service.dto.AuthenticationRequest;
 import com.murylomarques.iam_service.dto.AuthenticationResponse;
+import com.murylomarques.iam_service.dto.RefreshTokenRequest;
 import com.murylomarques.iam_service.dto.RegisterRequest;
+import com.murylomarques.iam_service.entity.Company;
+import com.murylomarques.iam_service.entity.RefreshToken;
 import com.murylomarques.iam_service.entity.Role;
 import com.murylomarques.iam_service.entity.User;
+import com.murylomarques.iam_service.repository.CompanyRepository;
+import com.murylomarques.iam_service.repository.RefreshTokenRepository;
 import com.murylomarques.iam_service.repository.RoleRepository;
 import com.murylomarques.iam_service.repository.UserRepository;
 import com.murylomarques.iam_service.security.JwtService;
@@ -14,10 +19,10 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -25,43 +30,65 @@ public class AuthenticationService {
 
     private final UserRepository repository;
     private final RoleRepository roleRepository;
+    private final CompanyRepository companyRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenService refreshTokenService;
+
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
 
+    /**
+     * REGISTRO DE USUÁRIO (MULTI-TENANT)
+     */
     public AuthenticationResponse register(RegisterRequest request) {
-        // 1. REGRA DE NEGÓCIO: Verificar se email já existe
+
         if (repository.existsByEmail(request.getEmail())) {
-            // Esse erro será capturado pelo GlobalExceptionHandler (Error 500 ou 409 se customizar)
             throw new RuntimeException("Email já cadastrado no sistema.");
         }
 
-        // 2. Busca a role padrão USER
-        Role userRole = roleRepository.findByName("ROLE_USER")
-                .orElseThrow(() -> new RuntimeException("Error: Role 'ROLE_USER' not found."));
+        // 🔹 Buscar ou criar empresa
+        // (Aqui o DTO usa companyId como nome para simplificar)
+        Company company = companyRepository.findByName(request.getCompanyId())
+                .orElseGet(() -> companyRepository.save(
+                        Company.builder()
+                                .name(request.getCompanyId())
+                                .active(true)
+                                .build()
+                ));
 
-        // 3. Cria o usuário
-        var user = User.builder()
+        // 🔹 Buscar role padrão
+        Role userRole = roleRepository.findByName("ROLE_USER")
+                .orElseThrow(() -> new RuntimeException("Role 'ROLE_USER' não encontrada."));
+
+        // 🔹 Criar usuário
+        User user = User.builder()
                 .firstName(request.getFirstName())
                 .lastName(request.getLastName())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
-                .companyId(request.getCompanyId())
-                .roles(new HashSet<>(Collections.singletonList(userRole))) // Adiciona a role numa lista mutável
+                .company(company)
+                .roles(new HashSet<>(Collections.singletonList(userRole)))
                 .build();
-        
-        repository.save(user);
-        
-        // 4. Gera o token e retorna
-        var jwtToken = generateTokenForUser(user);
-        
+
+        User savedUser = repository.save(user);
+
+        // 🔹 Gerar tokens
+        String accessToken = generateTokenForUser(savedUser);
+        var refreshToken = refreshTokenService.createRefreshToken(savedUser.getEmail());
+
         return AuthenticationResponse.builder()
-                .token(jwtToken)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken.getToken())
                 .build();
     }
 
+    /**
+     * LOGIN
+     */
+    @Transactional
     public AuthenticationResponse authenticate(AuthenticationRequest request) {
-        // 1. Autentica (Se falhar, o Spring lança exceção automaticamente)
+
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getEmail(),
@@ -69,31 +96,49 @@ public class AuthenticationService {
                 )
         );
 
-        // 2. Busca o usuário (Nesse ponto já sabemos que existe e a senha tá certa)
-        var user = repository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        
-        // 3. Gera o token e retorna
-        var jwtToken = generateTokenForUser(user);
+        User user = repository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+
+        String accessToken = generateTokenForUser(user);
+        var refreshToken = refreshTokenService.createRefreshToken(user.getEmail());
 
         return AuthenticationResponse.builder()
-                .token(jwtToken)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken.getToken())
                 .build();
     }
 
     /**
-     * Método auxiliar privado para gerar o token.
-     * Evita repetição de código no register e authenticate.
+     * REFRESH TOKEN
+     */
+    public AuthenticationResponse refreshToken(RefreshTokenRequest request) {
+
+        return refreshTokenRepository.findByToken(request.getRefreshToken())
+                .map(refreshTokenService::verifyExpiration)
+                .map(RefreshToken::getUser)
+                .map(user -> AuthenticationResponse.builder()
+                        .accessToken(generateTokenForUser(user))
+                        .refreshToken(request.getRefreshToken())
+                        .build()
+                )
+                .orElseThrow(() -> new RuntimeException("Refresh token inválido ou expirado."));
+    }
+
+    /**
+     * Geração de JWT
      */
     private String generateTokenForUser(User user) {
+
         var authorities = user.getRoles().stream()
                 .map(role -> new SimpleGrantedAuthority(role.getName()))
                 .toList();
 
-        return jwtService.generateToken(new org.springframework.security.core.userdetails.User(
-                user.getEmail(), 
-                user.getPassword(), 
-                authorities
-        ));
+        return jwtService.generateToken(
+                new org.springframework.security.core.userdetails.User(
+                        user.getEmail(),
+                        user.getPassword(),
+                        authorities
+                )
+        );
     }
 }
